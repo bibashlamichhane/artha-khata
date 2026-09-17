@@ -41,17 +41,26 @@ interface KhataDBSchema extends DBSchema {
       retry_count: number;
     };
   };
+  tombstones: {
+    key: string;
+    value: {
+      id: string;
+      table: 'groups' | 'group_members' | 'transactions';
+      deleted_at: string;
+    };
+    indexes: { 'by-table': string };
+  };
 }
 
 const DB_NAME = 'khata_offline_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<KhataDBSchema>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<KhataDBSchema>> {
   if (!dbPromise) {
     dbPromise = openDB<KhataDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion) {
         // Groups store
         if (!db.objectStoreNames.contains('groups')) {
           const groupStore = db.createObjectStore('groups', { keyPath: 'id' });
@@ -93,6 +102,12 @@ export function getDB(): Promise<IDBPDatabase<KhataDBSchema>> {
         if (!db.objectStoreNames.contains('sync_queue')) {
           db.createObjectStore('sync_queue', { keyPath: 'id' });
         }
+
+        // Tombstones store (version 2)
+        if (!db.objectStoreNames.contains('tombstones')) {
+          const tombstoneStore = db.createObjectStore('tombstones', { keyPath: 'id' });
+          tombstoneStore.createIndex('by-table', 'table');
+        }
       },
     });
   }
@@ -122,9 +137,9 @@ export async function idbGetGroup(id: string): Promise<ExpenseGroup | undefined>
 
 export async function idbDeleteGroup(id: string): Promise<void> {
   const db = await getDB();
-  const tx = db.transaction(['groups', 'members', 'transactions', 'splits'], 'readwrite');
+  const tx = db.transaction(['groups', 'members', 'transactions', 'splits', 'tombstones'], 'readwrite');
   
-  // Delete associated transactions & splits
+  // Delete associated transactions & splits and record tombstones
   const allTx = await tx.objectStore('transactions').index('by-group').getAll(id);
   for (const t of allTx) {
     const splits = await tx.objectStore('splits').index('by-transaction').getAll(t.id);
@@ -132,16 +147,31 @@ export async function idbDeleteGroup(id: string): Promise<void> {
       await tx.objectStore('splits').delete(s.id);
     }
     await tx.objectStore('transactions').delete(t.id);
+    await tx.objectStore('tombstones').put({
+      id: t.id,
+      table: 'transactions',
+      deleted_at: new Date().toISOString(),
+    });
   }
 
-  // Delete members
+  // Delete members and record tombstones
   const members = await tx.objectStore('members').index('by-group').getAll(id);
   for (const m of members) {
     await tx.objectStore('members').delete(m.id);
+    await tx.objectStore('tombstones').put({
+      id: m.id,
+      table: 'group_members',
+      deleted_at: new Date().toISOString(),
+    });
   }
 
-  // Delete group
+  // Delete group and record tombstone
   await tx.objectStore('groups').delete(id);
+  await tx.objectStore('tombstones').put({
+    id,
+    table: 'groups',
+    deleted_at: new Date().toISOString(),
+  });
   await tx.done;
 }
 
@@ -160,7 +190,14 @@ export async function idbGetMembers(groupId?: string): Promise<GroupMember[]> {
 
 export async function idbDeleteMember(id: string): Promise<void> {
   const db = await getDB();
-  await db.delete('members', id);
+  const tx = db.transaction(['members', 'tombstones'], 'readwrite');
+  await tx.objectStore('members').delete(id);
+  await tx.objectStore('tombstones').put({
+    id,
+    table: 'group_members',
+    deleted_at: new Date().toISOString(),
+  });
+  await tx.done;
 }
 
 export async function idbSaveTransaction(
@@ -202,12 +239,17 @@ export async function idbGetTransactions(groupId?: string): Promise<ExpenseTrans
 
 export async function idbDeleteTransaction(id: string): Promise<void> {
   const db = await getDB();
-  const tx = db.transaction(['transactions', 'splits'], 'readwrite');
+  const tx = db.transaction(['transactions', 'splits', 'tombstones'], 'readwrite');
   const splits = await tx.objectStore('splits').index('by-transaction').getAll(id);
   for (const s of splits) {
     await tx.objectStore('splits').delete(s.id);
   }
   await tx.objectStore('transactions').delete(id);
+  await tx.objectStore('tombstones').put({
+    id,
+    table: 'transactions',
+    deleted_at: new Date().toISOString(),
+  });
   await tx.done;
 }
 
@@ -234,6 +276,38 @@ export async function idbGetSettings(userId?: string): Promise<UserSettings | un
   }
   const all = await db.getAll('settings');
   return all[0];
+}
+
+// ----------------- Tombstone Helpers -----------------
+
+export async function idbAddTombstone(
+  id: string,
+  table: 'groups' | 'group_members' | 'transactions'
+): Promise<void> {
+  const db = await getDB();
+  await db.put('tombstones', {
+    id,
+    table,
+    deleted_at: new Date().toISOString(),
+  });
+}
+
+export async function idbGetTombstones(): Promise<
+  { id: string; table: 'groups' | 'group_members' | 'transactions'; deleted_at: string }[]
+> {
+  const db = await getDB();
+  return db.getAll('tombstones');
+}
+
+export async function idbIsTombstoned(id: string): Promise<boolean> {
+  const db = await getDB();
+  const found = await db.get('tombstones', id);
+  return !!found;
+}
+
+export async function idbRemoveTombstone(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('tombstones', id);
 }
 
 // ----------------- Sync Queue Helpers -----------------
@@ -265,7 +339,7 @@ export async function idbRemoveFromSyncQueue(id: string): Promise<void> {
 export async function idbClearUserData(): Promise<void> {
   const db = await getDB();
   const tx = db.transaction(
-    ['groups', 'members', 'transactions', 'splits', 'profile', 'settings', 'sync_queue'],
+    ['groups', 'members', 'transactions', 'splits', 'profile', 'settings', 'sync_queue', 'tombstones'],
     'readwrite'
   );
   await tx.objectStore('groups').clear();
@@ -275,5 +349,6 @@ export async function idbClearUserData(): Promise<void> {
   await tx.objectStore('profile').clear();
   await tx.objectStore('settings').clear();
   await tx.objectStore('sync_queue').clear();
+  await tx.objectStore('tombstones').clear();
   await tx.done;
 }

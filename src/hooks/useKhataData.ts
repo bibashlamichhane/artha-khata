@@ -14,7 +14,7 @@ import {
   idbAddToSyncQueue,
   idbClearUserData,
 } from '@/lib/indexeddb';
-import { runFullSync, subscribeSyncStatus } from '@/lib/sync';
+import { runFullSync, subscribeSyncStatus, subscribeDataChange, setupRealtimeSync } from '@/lib/sync';
 import { calculateEqualSplits, calculateGroupSettlement } from '@/lib/settlement';
 import type {
   ExpenseGroup,
@@ -171,17 +171,32 @@ export function useKhataData() {
 
   useEffect(() => {
     reloadLocalData();
-    const unsubscribe = subscribeSyncStatus((status, count) => {
+
+    const unsubscribeStatus = subscribeSyncStatus((status, count) => {
       setSyncStatus(status);
       setPendingCount(count);
     });
-    return () => unsubscribe();
+
+    const unsubscribeData = subscribeDataChange(() => {
+      reloadLocalData();
+    });
+
+    return () => {
+      unsubscribeStatus();
+      unsubscribeData();
+    };
   }, [reloadLocalData]);
 
-  // Trigger background sync when online
+  // Trigger background sync when online and setup realtime listener
   useEffect(() => {
     if (user && !isDemoUser && isSupabaseConfigured && navigator.onLine) {
       runFullSync(user.id).then(() => reloadLocalData());
+      const cleanupRealtime = setupRealtimeSync(user.id, () => {
+        reloadLocalData();
+      });
+      return () => {
+        cleanupRealtime();
+      };
     }
   }, [user, isDemoUser, reloadLocalData]);
 

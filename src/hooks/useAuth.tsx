@@ -82,10 +82,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await idbSaveSettings(currentSettings);
       }
       setSettings(currentSettings);
+      if (currentSettings.theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
     } catch (e) {
       console.error('Error initializing user profile/settings:', e);
     }
   };
+
+  // Sync theme with DOM whenever settings changes
+  useEffect(() => {
+    if (settings?.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [settings?.theme]);
 
   useEffect(() => {
     let mounted = true;
