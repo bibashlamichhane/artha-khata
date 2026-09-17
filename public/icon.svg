@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+  </defs>
+  <!-- Background with subtle rounded shape -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Outer Ledger Border -->
+  <rect x="76" y="86" width="360" height="340" rx="32" fill="none" stroke="#334155" stroke-width="8" stroke-dasharray="8 8" opacity="0.6"/>
+
+  <!-- Left Spine Bar (Khata Ledger Spine) -->
+  <rect x="110" y="116" width="44" height="280" rx="14" fill="url(#emeraldGrad)" />
+
+  <!-- Balance Scales / Interlocking Financial K Paths -->
+  <!-- Upper Right Arrow Path -->
+  <path d="M190 256 L310 136 C322 124 342 124 354 136 L366 148 C378 160 378 180 366 192 L280 278 Z" fill="url(#tealGrad)" />
+  
+  <!-- Lower Right Arrow Path (Settlement Flow) -->
+  <path d="M256 256 L366 366 C378 378 378 398 366 410 L354 422 C342 434 322 434 310 422 L190 302 Z" fill="url(#emeraldGrad)" />
+  
+  <!-- Central Settlement Node / Gold Coin / Pivot -->
+  <circle cx="236" cy="256" r="32" fill="#ffffff" filter="drop-shadow(0 4px 12px rgba(0,0,0,0.3))" />
+  <circle cx="236" cy="256" r="20" fill="#0f172a" />
+  <circle cx="236" cy="256" r="10" fill="#10b981" />
+
+  <!-- Subtle Financial Accent Dots -->
+  <circle cx="390" cy="140" r="10" fill="#38bdf8" opacity="0.8"/>
+  <circle cx="390" cy="400" r="10" fill="#10b981" opacity="0.8"/>
+</svg>
