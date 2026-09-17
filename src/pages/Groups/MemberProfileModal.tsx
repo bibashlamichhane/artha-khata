@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, User, Phone, ArrowUpRight, ArrowDownLeft, Edit2, Check, ArrowLeft } from 'lucide-react';
-import { formatCurrency } from '@/lib/settlement';
-import type { GroupMember, MemberBalance, DebtSettlement } from '@/types/khata';
+import { formatCurrency, getMemberWiseSettlements } from '@/lib/settlement';
+import type { GroupMember, MemberBalance, DebtSettlement, ExpenseTransaction } from '@/types/khata';
 
 interface MemberProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   member: GroupMember;
+  allMembers?: GroupMember[];
+  transactions?: ExpenseTransaction[];
   balance?: MemberBalance;
+  balances?: Record<string, MemberBalance>;
   settlements: DebtSettlement[];
   currency: string;
   onUpdateMember: (id: string, name: string, phone?: string, photo_url?: string) => Promise<void>;
@@ -17,7 +20,10 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   isOpen,
   onClose,
   member,
+  allMembers = [],
+  transactions = [],
   balance,
+  balances = {},
   settlements,
   currency,
   onUpdateMember,
@@ -34,9 +40,17 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   const isCreditor = netBalance > 0;
   const isDebtor = netBalance < 0;
 
-  // Person-to-person settlement details for this specific member
-  const debtsToPay = settlements.filter((s) => s.from_id === member.id);
-  const debtsToReceive = settlements.filter((s) => s.to_id === member.id);
+  // Calculate member-wise settlement for all other members in the group (zero balances stay visible)
+  const memberWiseItems = useMemo(() => {
+    return getMemberWiseSettlements(
+      member.id,
+      allMembers,
+      settlements,
+      transactions,
+      balances,
+      currency
+    );
+  }, [member.id, allMembers, settlements, transactions, balances, currency]);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -221,55 +235,97 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
             </div>
           </div>
 
-          {/* Person-to-Person Settlement Breakdown */}
+          {/* Member-Wise Settlement Breakdown */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Person-to-Person Settlement Breakdown
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Member-Wise Settlement ({memberWiseItems.length})
+              </h4>
+              <span className="text-[11px] text-slate-400">
+                Relative to {member.name}
+              </span>
+            </div>
 
-            {debtsToPay.length === 0 && debtsToReceive.length === 0 ? (
+            {memberWiseItems.length === 0 ? (
               <p className="text-xs text-slate-500 dark:text-slate-400 italic py-2">
-                No active outstanding debts for this member.
+                No other members in this group yet.
               </p>
             ) : (
               <div className="space-y-2">
-                {/* Needs to Pay */}
-                {debtsToPay.map((d) => (
+                {memberWiseItems.map((item) => (
                   <div
-                    key={d.id}
-                    className="flex items-center justify-between p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-xs"
+                    key={item.member.id}
+                    className={`flex items-center justify-between p-3.5 rounded-2xl border transition ${
+                      item.status === 'receive'
+                        ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/40'
+                        : item.status === 'pay'
+                        ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-100 dark:border-rose-900/40'
+                        : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-800'
+                    }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-rose-100 dark:bg-rose-900 text-rose-600 dark:text-rose-300 flex items-center justify-center">
-                        <ArrowUpRight className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${
+                          item.status === 'receive'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                            : item.status === 'pay'
+                            ? 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300'
+                            : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {item.status === 'receive' ? (
+                          <ArrowDownLeft className="w-4 h-4" />
+                        ) : item.status === 'pay' ? (
+                          <ArrowUpRight className="w-4 h-4" />
+                        ) : (
+                          <Check className="w-4 h-4" />
+                        )}
                       </div>
-                      <span className="text-slate-700 dark:text-slate-300">
-                        Owes <strong>{d.to_name}</strong>
-                      </span>
-                    </div>
-                    <span className="font-bold text-rose-600 dark:text-rose-400">
-                      {d.formatted_amount}
-                    </span>
-                  </div>
-                ))}
 
-                {/* Should Receive */}
-                {debtsToReceive.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-900 text-emerald-600 dark:text-emerald-300 flex items-center justify-center">
-                        <ArrowDownLeft className="w-3.5 h-3.5" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {item.member.name}
+                          </span>
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                              item.status === 'receive'
+                                ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
+                                : item.status === 'pay'
+                                ? 'bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300'
+                                : 'bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {item.status === 'receive'
+                              ? 'To Receive'
+                              : item.status === 'pay'
+                              ? 'Needs to Pay'
+                              : 'All Settled'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                          {item.status === 'receive'
+                            ? `Owes ${member.name}`
+                            : item.status === 'pay'
+                            ? `${member.name} owes ${item.member.name}`
+                            : `Settled with ${member.name}`}
+                        </p>
                       </div>
-                      <span className="text-slate-700 dark:text-slate-300">
-                        To receive from <strong>{d.from_name}</strong>
+                    </div>
+
+                    <div className="text-right shrink-0 ml-3">
+                      <span
+                        className={`text-sm font-bold font-mono block ${
+                          item.status === 'receive'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : item.status === 'pay'
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {item.formatted_amount}
                       </span>
                     </div>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                      {d.formatted_amount}
-                    </span>
                   </div>
                 ))}
               </div>

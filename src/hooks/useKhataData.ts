@@ -15,7 +15,7 @@ import {
   idbClearUserData,
 } from '@/lib/indexeddb';
 import { runFullSync, subscribeSyncStatus, subscribeDataChange, setupRealtimeSync } from '@/lib/sync';
-import { calculateEqualSplits, calculateGroupSettlement } from '@/lib/settlement';
+import { calculateEqualSplits, calculateGroupSettlement, sortTransactionsNewestFirst } from '@/lib/settlement';
 import type {
   ExpenseGroup,
   GroupMember,
@@ -152,7 +152,7 @@ export function useKhataData() {
 
         setGroups([sampleGroup]);
         setMembers(sampleMembers);
-        setTransactions([{ ...tx2, splits: splits2 }, { ...tx1, splits: splits1 }]);
+        setTransactions(sortTransactionsNewestFirst([{ ...tx2, splits: splits2 }, { ...tx1, splits: splits1 }]));
         setIsLoading(false);
         return;
       }
@@ -161,7 +161,7 @@ export function useKhataData() {
       // Filter members and transactions by user's groups
       const userGroupIds = new Set(localGroups.map((g) => g.id));
       setMembers(allMembers.filter((m) => userGroupIds.has(m.group_id)));
-      setTransactions(allTxs.filter((t) => userGroupIds.has(t.group_id)));
+      setTransactions(sortTransactionsNewestFirst(allTxs.filter((t) => userGroupIds.has(t.group_id))));
     } catch (err) {
       console.error('Failed to load local data:', err);
     } finally {
@@ -397,7 +397,7 @@ export function useKhataData() {
     };
 
     await idbSaveTransaction(newTx, splits);
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions((prev) => sortTransactionsNewestFirst([newTx, ...prev]));
 
     if (!isDemoUser) {
       // Add transaction insert to queue

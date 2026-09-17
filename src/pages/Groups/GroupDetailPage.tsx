@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ArrowLeft,
   UserPlus,
@@ -11,7 +11,7 @@ import {
   Calendar,
   AlertTriangle,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/settlement';
+import { formatCurrency, sortTransactionsNewestFirst } from '@/lib/settlement';
 import { generateAndDownloadBill } from '@/lib/bill';
 import { AddSplitModal } from './AddSplitModal';
 import { MemberProfileModal } from './MemberProfileModal';
@@ -72,6 +72,9 @@ export const GroupDetailPage: React.FC<GroupDetailPageProps> = ({
 
   const memberMap = new Map<string, GroupMember>();
   for (const m of members) memberMap.set(m.id, m);
+
+  // Group transactions deterministically sorted newest-first (NEW -> OLDER -> OLDEST)
+  const sortedTransactions = useMemo(() => sortTransactionsNewestFirst(transactions), [transactions]);
 
   // Handle Bill Generation
   const handleGenerateBill = async (tx: ExpenseTransaction) => {
@@ -327,7 +330,7 @@ export const GroupDetailPage: React.FC<GroupDetailPageProps> = ({
           </h3>
         </div>
 
-        {transactions.length === 0 ? (
+        {sortedTransactions.length === 0 ? (
           <div className="p-8 rounded-2xl bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-800 text-center">
             <Receipt className="w-8 h-8 text-slate-400 mx-auto mb-2" />
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -345,7 +348,7 @@ export const GroupDetailPage: React.FC<GroupDetailPageProps> = ({
           </div>
         ) : (
           <div className="space-y-2.5">
-            {transactions.map((tx) => {
+            {sortedTransactions.map((tx) => {
               const payer = memberMap.get(tx.paid_by);
               const txDate = new Date(tx.transaction_date);
               const dateFormatted = txDate.toLocaleDateString('en-US', {
@@ -513,7 +516,10 @@ export const GroupDetailPage: React.FC<GroupDetailPageProps> = ({
           isOpen={!!selectedMember}
           onClose={() => setSelectedMember(null)}
           member={selectedMember}
+          allMembers={members}
+          transactions={transactions}
           balance={settlement.balances[selectedMember.id]}
+          balances={settlement.balances}
           settlements={settlement.settlements}
           currency={currency}
           onUpdateMember={onUpdateMember}

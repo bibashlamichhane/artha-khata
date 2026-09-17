@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   Users,
@@ -12,7 +12,7 @@ import {
   CheckCircle2,
   FolderPlus,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/settlement';
+import { formatCurrency, sortTransactionsNewestFirst } from '@/lib/settlement';
 import { generateAndDownloadBill } from '@/lib/bill';
 import { AddSplitModal } from '../Groups/AddSplitModal';
 import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal';
@@ -146,7 +146,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
-  const recentTransactions = transactions.slice(0, 6);
+  const sortedTransactions = useMemo(() => sortTransactionsNewestFirst(transactions), [transactions]);
+  const recentTransactions = sortedTransactions.slice(0, 6);
 
   return (
     <div className="space-y-6 pb-20 sm:pb-8">
@@ -395,12 +396,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       </div>
 
       {/* Add Split Modal */}
-      {isAddSplitOpen && selectedGroupForSplit && (
+      {isAddSplitOpen && (
         <AddSplitModal
           isOpen={isAddSplitOpen}
           onClose={() => setIsAddSplitOpen(false)}
-          group={selectedGroupForSplit}
-          members={members.filter((m) => m.group_id === selectedGroupForSplit.id)}
+          group={selectedGroupForSplit || groups[0]}
+          groups={groups}
+          allMembers={members}
+          members={members.filter((m) => m.group_id === (selectedGroupForSplit?.id || groups[0]?.id))}
           currency={currency}
           onAddTransaction={async (data) => {
             await onAddTransaction(data);

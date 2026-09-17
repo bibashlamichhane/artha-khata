@@ -8,7 +8,7 @@ import {
   Receipt,
   Users,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/settlement';
+import { formatCurrency, sortTransactionsNewestFirst } from '@/lib/settlement';
 import { generatePDFReport } from '@/lib/pdf';
 import type {
   ExpenseTransaction,
@@ -51,7 +51,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
   const filteredTransactions = useMemo(() => {
     const now = new Date();
 
-    return transactions.filter((tx) => {
+    const matches = transactions.filter((tx) => {
       const txDate = new Date(tx.transaction_date);
 
       // Group filter
@@ -90,6 +90,8 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
       }
       return true;
     });
+
+    return sortTransactionsNewestFirst(matches);
   }, [transactions, dateFilter, customStartDate, customEndDate, selectedPayerId, selectedGroupId]);
 
   const totalFilteredAmountMinor = useMemo(() => {

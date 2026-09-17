@@ -20,6 +20,8 @@ import {
   calculateEqualSplits,
   calculateGroupSettlement,
   getMemberSettlementDetails,
+  sortTransactionsNewestFirst,
+  getMemberWiseSettlements,
 } from '../lib/settlement';
 import type { GroupMember, ExpenseTransaction } from '../types/khata';
 
@@ -162,6 +164,72 @@ export function runSettlementTests() {
   const m1Details = getMemberSettlementDetails('m1', summary1.settlements);
   assertEquals(m1Details.totalToReceive, 75000, 'Bibash receives 750 total');
   assertEquals(m1Details.totalToPay, 0, 'Bibash pays 0');
+
+  // Test 7: sortTransactionsNewestFirst deterministic sorting
+  const unorderedTxs: ExpenseTransaction[] = [
+    {
+      id: 'tx_old',
+      group_id: 'g1',
+      owner_id: 'u1',
+      description: 'Older Tx',
+      amount: 1000,
+      currency: 'NPR',
+      paid_by: 'm1',
+      transaction_date: '2026-01-01T10:00:00Z',
+      created_at: '2026-01-01T10:00:00Z',
+      updated_at: '2026-01-01T10:00:00Z',
+      splits: [],
+    },
+    {
+      id: 'tx_newest',
+      group_id: 'g1',
+      owner_id: 'u1',
+      description: 'Newest Tx',
+      amount: 2000,
+      currency: 'NPR',
+      paid_by: 'm1',
+      transaction_date: '2026-03-01T10:00:00Z',
+      created_at: '2026-03-01T10:00:00Z',
+      updated_at: '2026-03-01T10:00:00Z',
+      splits: [],
+    },
+    {
+      id: 'tx_mid',
+      group_id: 'g1',
+      owner_id: 'u1',
+      description: 'Mid Tx',
+      amount: 1500,
+      currency: 'NPR',
+      paid_by: 'm1',
+      transaction_date: '2026-02-01T10:00:00Z',
+      created_at: '2026-02-01T10:00:00Z',
+      updated_at: '2026-02-01T10:00:00Z',
+      splits: [],
+    },
+  ];
+  const sortedTxs = sortTransactionsNewestFirst(unorderedTxs);
+  assertEquals(sortedTxs[0].id, 'tx_newest', 'First tx is newest');
+  assertEquals(sortedTxs[1].id, 'tx_mid', 'Second tx is mid');
+  assertEquals(sortedTxs[2].id, 'tx_old', 'Third tx is oldest');
+
+  // Test 8: getMemberWiseSettlements includes all other group members even with 0 balance
+  // In summaryExcluded, Bibash (m1) paid 1000 for Sandesh (m2) and Janak (m3).
+  // Ranjit (m4) has 0 balance.
+  const bibashMemberWise = getMemberWiseSettlements('m1', members, summaryExcluded.settlements);
+  assertEquals(bibashMemberWise.length, 3, 'Bibash sees all 3 other members');
+  assert(!bibashMemberWise.some((b) => b.member.id === 'm1'), 'Bibash does not see self');
+  const ranjitRelToBibash = bibashMemberWise.find((b) => b.member.id === 'm4');
+  assert(!!ranjitRelToBibash, 'Ranjit is in the list');
+  assertEquals(ranjitRelToBibash?.status, 'settled', 'Ranjit status is settled with 0 balance');
+  assertEquals(ranjitRelToBibash?.amount, 0, 'Ranjit amount is 0');
+
+  // When viewing Sandesh (m2)
+  const sandeshMemberWise = getMemberWiseSettlements('m2', members, summaryExcluded.settlements);
+  assertEquals(sandeshMemberWise.length, 3, 'Sandesh sees all 3 other members');
+  assert(!sandeshMemberWise.some((b) => b.member.id === 'm2'), 'Sandesh does not see self');
+  const bibashRelToSandesh = sandeshMemberWise.find((b) => b.member.id === 'm1');
+  assertEquals(bibashRelToSandesh?.status, 'pay', 'Sandesh pays Bibash');
+  assertEquals(bibashRelToSandesh?.amount, 50000, 'Sandesh pays 500 NPR');
 
   console.log('✓ All Settlement Engine tests passed successfully!');
   return true;

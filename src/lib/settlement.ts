@@ -217,3 +217,127 @@ export function getMemberSettlementDetails(
     totalToReceive,
   };
 }
+
+/**
+ * Sorts transactions deterministically newest first (NEW -> OLDER -> OLDEST)
+ * Uses transaction_date primary, created_at secondary, and id tertiary.
+ */
+export function sortTransactionsNewestFirst(
+  transactions: ExpenseTransaction[]
+): ExpenseTransaction[] {
+  return [...transactions].sort((a, b) => {
+    const timeA = new Date(a.transaction_date || a.created_at || 0).getTime();
+    const timeB = new Date(b.transaction_date || b.created_at || 0).getTime();
+    if (timeB !== timeA) {
+      return timeB - timeA;
+    }
+    const createdA = new Date(a.created_at || 0).getTime();
+    const createdB = new Date(b.created_at || 0).getTime();
+    if (createdB !== createdA) {
+      return createdB - createdA;
+    }
+    return (b.id || '').localeCompare(a.id || '');
+  });
+}
+
+export interface MemberWiseSettlementItem {
+  member: GroupMember;
+  amount: number; // in minor units
+  status: 'receive' | 'pay' | 'settled';
+  formatted_amount: string;
+}
+
+/**
+ * Calculates member-wise settlement breakdown for an individual member.
+ * Guarantees that ALL OTHER members in the group are returned (never excluding zero-balance members).
+ * Never includes the member itself against itself.
+ */
+export function getMemberWiseSettlements(
+  memberId: string,
+  allGroupMembers: GroupMember[],
+  settlements: DebtSettlement[] = [],
+  transactions: ExpenseTransaction[] = [],
+  memberBalances: Record<string, MemberBalance> = {},
+  currency: string = 'NPR'
+): MemberWiseSettlementItem[] {
+  const otherMembers = allGroupMembers.filter((m) => m.id !== memberId);
+  const currentMemberBalance = memberBalances[memberId];
+  const currentNet = currentMemberBalance?.net_balance || 0;
+
+  return otherMembers.map((other) => {
+    // 1. Check if there is a simplified settlement debt directly between memberId and other.id
+    const toReceive = settlements.find(
+      (s) => s.from_id === other.id && s.to_id === memberId
+    );
+    const toPay = settlements.find(
+      (s) => s.from_id === memberId && s.to_id === other.id
+    );
+
+    if (toReceive && toReceive.amount > 0) {
+      return {
+        member: other,
+        amount: toReceive.amount,
+        status: 'receive',
+        formatted_amount: formatCurrency(toReceive.amount, currency),
+      };
+    }
+
+    if (toPay && toPay.amount > 0) {
+      return {
+        member: other,
+        amount: toPay.amount,
+        status: 'pay',
+        formatted_amount: formatCurrency(toPay.amount, currency),
+      };
+    }
+
+    // 2. If not matched in simplified settlements, calculate direct pairwise splits from transactions
+    let paidByMemberForOther = 0;
+    let paidByOtherForMember = 0;
+
+    for (const tx of transactions) {
+      if (tx.paid_by === memberId) {
+        const split = tx.splits?.find((s) => s.member_id === other.id);
+        if (split) paidByMemberForOther += split.share_amount;
+      } else if (tx.paid_by === other.id) {
+        const split = tx.splits?.find((s) => s.member_id === memberId);
+        if (split) paidByOtherForMember += split.share_amount;
+      }
+    }
+
+    const directNet = paidByMemberForOther - paidByOtherForMember;
+    const otherMemberBalance = memberBalances[other.id];
+    const otherNet = otherMemberBalance?.net_balance || 0;
+
+    // Verify alignment with overall balances
+    if (directNet > 0 && currentNet > 0 && otherNet < 0) {
+      const amt = Math.min(directNet, currentNet, Math.abs(otherNet));
+      if (amt > 0) {
+        return {
+          member: other,
+          amount: amt,
+          status: 'receive',
+          formatted_amount: formatCurrency(amt, currency),
+        };
+      }
+    } else if (directNet < 0 && currentNet < 0 && otherNet > 0) {
+      const amt = Math.min(Math.abs(directNet), Math.abs(currentNet), otherNet);
+      if (amt > 0) {
+        return {
+          member: other,
+          amount: amt,
+          status: 'pay',
+          formatted_amount: formatCurrency(amt, currency),
+        };
+      }
+    }
+
+    // 3. Otherwise, zero balance / all settled
+    return {
+      member: other,
+      amount: 0,
+      status: 'settled',
+      formatted_amount: formatCurrency(0, currency),
+    };
+  });
+}
